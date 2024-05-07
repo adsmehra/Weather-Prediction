@@ -167,7 +167,7 @@ class MainActivity : AppCompatActivity() {
         val predictedWeather = weatherConditions[predictedClassIndex]
         Log.d("Weather", "Predicted: $predictedClassIndex")
 
-        return "Predicted Weather: $predictedWeather"
+        return predictedWeather
 
     }
 
