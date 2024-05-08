@@ -35,20 +35,15 @@ class MainActivity : AppCompatActivity() {
         tempEt = findViewById(R.id.tempET)
         humidEt = findViewById(R.id.humidET)
         resultTv = findViewById(R.id.resultTV)
+
+        //When User presses Enter Button, Move the Cursor to Next EditText
         tempEt.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
-            }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
 
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-
-            }
-
-            override fun afterTextChanged(s: Editable?) {
-
-            }
+            override fun afterTextChanged(s: Editable?) {}
         })
-
         tempEt.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_NEXT) {
                 humidEt.requestFocus()
@@ -58,21 +53,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        //When User presses Enter button, Close the Input Method
         humidEt.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
-            }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
 
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-
-            }
-
-            override fun afterTextChanged(s: Editable?) {
-
-            }
+            override fun afterTextChanged(s: Editable?) {}
 
         })
-
         humidEt.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
                 val inputMethodManager =
@@ -86,39 +75,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         try {
-            tflite = Interpreter(loadModelFile())
+            tflite = Interpreter(loadModelFile())       //Initialize ML Model
             predictBtn.setOnClickListener {
                 resultTv.text=null
-                val temp = tempEt.text.toString().trim()
-                val humidity = humidEt.text.toString().trim()
 
-                if (temp.isEmpty() || humidity.isEmpty()) {
-                    // Toast message indicating that the fields are empty
-                    Toast.makeText(
-                        this,
-                        "Please enter both temperature and humidity",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
+                val weatherData = fetchData()       //Get Data from EditText Views
+                if (weatherData[2]=="1"){       //Verify Data
+                    val temp = weatherData[0]
+                    val humidity = weatherData[1]
                     try {
                         val temperatureC = temp.toFloat()
                         val humidityPer = humidity.toFloat()
-                        val model = WeatherPredictor.newInstance(this)
-                        val weather = predictWeather(temperatureC, humidityPer)
-                        resultTv.text = "Predicted Weather: " + weather
+                        val model = WeatherPredictor.newInstance(this)      //Initialize Weather Predictor
+                        val weather = predictWeather(temperatureC, humidityPer)     //Predict Weather
 
-                        var weatherLogo = 0
-                        when (weather) {
-                            "Sunny" -> weatherLogo = R.drawable.sunny
-                            "Cloudy" -> weatherLogo = R.drawable.cloudy
-                            "Partly Cloudy" -> weatherLogo = R.drawable.partly_cloudy
-                            "Rainy" -> weatherLogo = R.drawable.rainy
-                            "Cold" -> weatherLogo = R.drawable.cold
-                        }
-                        resultTv.setCompoundDrawablesWithIntrinsicBounds(0, weatherLogo, 0, 0)
-                        // Releases model resources if no longer used.
-                        model.close()
-                    } catch (e: NumberFormatException) {
+                        updateUI(weather)       //Update UI
+
+                        model.close()       // Releases model resources if no longer used.
+                    }
+                    catch (e: NumberFormatException) {
                         // Handles the case where the user entered a non-numeric value
                         Toast.makeText(
                             this,
@@ -129,14 +104,50 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-        } catch (ex: Exception) {
+        }
+        //Handle Initialization Error
+        catch (ex: Exception) {
             ex.printStackTrace()
             Toast.makeText(this, "Failed to initialize model: ${ex.message}", Toast.LENGTH_SHORT)
                 .show()
         }
     }
 
+    private fun updateUI(weatherInfo: String){
+        //Get Data
+        val weatherIcon = when(weatherInfo) {
+            "Sunny" -> R.drawable.sunny
+            "Cloudy" -> R.drawable.cloudy
+            "Partly Cloudy" -> R.drawable.partly_cloudy
+            "Rainy" -> R.drawable.rainy
+            "Cold" -> R.drawable.cold
+            else -> 0
+        }
+
+        // Update UI on Separate Thread
+        runOnUiThread {
+            resultTv.text = "Predicted Weather: \n$weatherInfo"
+            resultTv.setCompoundDrawablesRelativeWithIntrinsicBounds(0, weatherIcon, 0, 0)
+        }
+    }
+
+    private fun fetchData():Array<String>{
+        val temp = tempEt.text.toString().trim()
+        val humidity = humidEt.text.toString().trim()
+        var flag = "0"      //Set Flag 0 to check if both Temperature and Humidity are Entered by User
+        if (temp.isEmpty() || humidity.isEmpty()) {
+            // Toast message indicating that the fields are empty
+            Toast.makeText(
+                this,
+                "Please enter both temperature and humidity",
+                Toast.LENGTH_SHORT
+            ).show()
+        }else{flag = "1"}
+        return arrayOf(temp,humidity,flag)
+    }
+
     private fun loadModelFile(): ByteBuffer {
+        //Load TfLite Model from Assets Directory
         val fileDescriptor: AssetFileDescriptor = assets.openFd("Weather_predictor.tflite")
         val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
         val fileChannel = inputStream.channel
@@ -152,24 +163,25 @@ class MainActivity : AppCompatActivity() {
         // Creates inputs for reference.
         val inputFeature0 = byteBuffer.asFloatBuffer()
         inputFeature0.put(floatArrayOf(temperatureC, humidityPer))
-        byteBuffer.rewind()
 
-        // Runs model inference and gets result.
-        val outputs = Array(1) { FloatArray(5) }
+        byteBuffer.rewind()     //Rewind Cursor to reading next value
+
+        val outputs = Array(1) { FloatArray(5) }        // Runs model inference and gets result.
         tflite.run(inputFeature0, outputs)
 
-        val maxIndex = outputs[0].indices.maxByOrNull { outputs[0][it] } ?: -1
+        val maxIndex = outputs[0].indices.maxByOrNull { outputs[0][it] } ?: -1      //Get Index Value for Predicted Weather
         val predictedClassIndex = if (maxIndex != -1) maxIndex else 0
 
-        //val predictedClassIndex = outputs[0].indexOf(outputs[0].maxOrNull() ?: 0f)
+
         val weatherConditions =
-            arrayOf("Cloudy", "Cold", "Rainy", "Sunny", "Partly Cloudy")
+            arrayOf("Cloudy", "Cold", "Rainy", "Sunny", "Partly Cloudy")        //Default Set of Weather Data
         val predictedWeather = weatherConditions[predictedClassIndex]
         Log.d("Weather", "Predicted: $predictedClassIndex")
 
-        return predictedWeather
-
+        return predictedWeather     //Return Predicted Weather
     }
+
+
 
     override fun onDestroy() {
         super.onDestroy()
